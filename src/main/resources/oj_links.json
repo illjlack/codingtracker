@@ -1,0 +1,74 @@
+{
+  "codeforces": {
+    "indexLink": "https://codeforces.com/",
+    "userInfoLink": "https://codeforces.com/api/user.status?handle=%s",
+    "pbStatusLink": "https://codeforces.com/api/problemset.problems",
+    "problemLink": "https://codeforces.com/contest/%s/problem/%s",
+    "loginLink": "https://codeforces.com/enter",
+    "authToken": ""
+  },
+  "vjudge": {
+    "indexLink": "https://vjudge.net/",
+    "userInfoLink": "https://vjudge.net/user/%s",
+    "pbStatusLink": "",
+    "problemLink": "",
+    "loginLink": "https://vjudge.net/user/login",
+    "authToken": ""
+  },
+  "beecrowd": {
+    "indexLink": "https://judge.beecrowd.com/",
+    "userInfoLink": "https://judge.beecrowd.com/en/profile/%s",
+    "pbStatusLink": "",
+    "problemLink": "https://resources.beecrowd.com/repository/UOJ_%s_en.html",
+    "loginLink": "https://judge.beecrowd.com/en/login",
+    "authToken": ""
+  },
+  "hdu": {
+    "indexLink": "http://acm.hdu.edu.cn/",
+    "userInfoLink": "http://acm.hdu.edu.cn/userstatus.php?user=%s",
+    "pbStatusLink": "",
+    "problemLink": "http://acm.hdu.edu.cn/showproblem.php?pid=%s",
+    "loginLink": "",
+    "authToken": ""
+  },
+  "poj": {
+    "indexLink": "http://poj.org/",
+    "userInfoLink": "http://poj.org/userstatus?user_id=%s",
+    "pbStatusLink": "",
+    "problemLink": "http://poj.org/problem?id=%s",
+    "loginLink": "http://poj.org/login",
+    "authToken": ""
+  },
+  "leetcode": {
+    "indexLink": "https://leetcode.cn/",
+    "userInfoLink": "https://leetcode.cn/u/%s",
+    "pbStatusLink": "https://leetcode.cn/api/problems/all/",
+    "problemLink": "https://leetcode.cn/problems/%s",
+    "loginLink": "https://leetcode.cn/accounts/login/",
+    "authToken": ""
+  },
+  "luogu": {
+    "indexLink": "https://www.luogu.com.cn/",
+    "userInfoLink": "https://www.luogu.com.cn/user/%s",
+    "pbStatusLink": "",
+    "problemLink": "https://www.luogu.com.cn/problem/%s",
+    "loginLink": "https://www.luogu.com.cn/account/login",
+    "authToken": ""
+  },
+  "atcoder": {
+    "indexLink": "https://atcoder.jp/",
+    "userInfoLink": "https://atcoder.jp/users/%s",
+    "pbStatusLink": "",
+    "problemLink": "https://atcoder.jp/contests/%s/tasks/%s",
+    "loginLink": "https://atcoder.jp/login",
+    "authToken": ""
+  },
+  "nowcoder": {
+    "indexLink": "https://ac.nowcoder.com/",
+    "userInfoLink": "",
+    "pbStatusLink": "",
+    "problemLink": "",
+    "loginLink": "https://www.nowcoder.com/login",
+    "authToken": ""
+  }
+}
