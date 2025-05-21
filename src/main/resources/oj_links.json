@@ -53,7 +53,7 @@
     "pbStatusLink": "",
     "problemLink": "https://www.luogu.com.cn/problem/%s",
     "loginLink": "https://www.luogu.com.cn/account/login",
-    "authToken": ""
+    "authToken": "__client_id=7b0455ad8f8ea2bc6e7434d681e8ab799e3b9b0c; _uid=576200"
   },
   "atcoder": {
     "indexLink": "https://atcoder.jp/",

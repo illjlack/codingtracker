@@ -25,14 +25,14 @@ public class UserTryProblem implements Serializable,Comparable<UserTryProblem>{
     /**
      * 关联的用户
      */
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
     /**
      * 关联的题目
      */
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "problem_id", nullable = false)
     private ExtOjPbInfo extOjPbInfo;
 

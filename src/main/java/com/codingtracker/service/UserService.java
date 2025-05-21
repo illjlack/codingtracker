@@ -221,10 +221,11 @@ public class UserService {
         Optional<User> userOptional = userRepository.findByUsername(username);  // 根据用户名查找用户
         if (userOptional.isPresent()) {
             User user = userOptional.get();
+            String ojName = OJPlatform.fromName(platform).toString();
             List<UserOJ> ojAccounts = user.getOjAccounts();
             for (UserOJ ojAccount : ojAccounts) {
                 // 根据 OJ 平台和账号名称匹配
-                if (ojAccount.getPlatform().toString().equals(platform) && ojAccount.getAccountName().equals(accountName)) {
+                if (ojAccount.getPlatform().toString().equals(ojName) && ojAccount.getAccountName().equals(accountName)) {
                     ojAccounts.remove(ojAccount);  // 从用户的 OJ 账号列表中移除该 OJ 账号
                     userOJRepository.delete(ojAccount);  // 从数据库中删除该 OJ 账号
                     userRepository.save(user);  // 保存更新后的用户实体

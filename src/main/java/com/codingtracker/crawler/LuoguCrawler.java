@@ -50,6 +50,17 @@ public class LuoguCrawler {
         return OJPlatform.LUOGU;
     }
 
+    public static Map<String,String> parseCookies(String cookieHeader) {
+        if (cookieHeader == null || cookieHeader.isBlank()) {
+            return Map.of();
+        }
+        return Arrays.stream(cookieHeader.split(";"))
+                .map(String::trim)
+                .filter(s -> s.contains("="))
+                .map(s -> s.split("=", 2))
+                .collect(Collectors.toMap(a -> a[0], a -> a[1]));
+    }
+
     /**
      * 拉取单个 Luogu 题目信息并构建实体
      */
@@ -57,9 +68,12 @@ public class LuoguCrawler {
         ExtOjLink link = linkRepo.findById(getOjType())
                 .orElseThrow(() -> new RuntimeException("Missing Luogu link config"));
         String url = String.format(link.getProblemLink(), pid);
+        String rawCookie = link.getAuthToken();
+        Map<String,String> cookies = parseCookies(rawCookie);
+
         logger.info("调用 Luogu 题目详情页面，url：{}", url);
         try {
-            Document doc = httpUtil.readJsoupURL(url);
+            Document doc = httpUtil.readJsoupURL(url, cookies);
             // 解析题目标题
             String title = Optional.ofNullable(doc.selectFirst(".ttitle"))
                     .map(Element::text)

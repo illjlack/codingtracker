@@ -88,32 +88,6 @@ public class ExtOjService {
         return set;
     }
 
-
-    /**
-     * 根据用户名查找并更新单个用户的尝试记录
-     */
-    public SortedSet<UserTryProblem> fetchUserTriesByUsername(String username) {
-        Optional<User> user = userRepository.findByUsername(username);  // 根据用户名查找用户
-        if (user.isEmpty()) {
-            logger.error("找不到用户名为 {} 的用户", username);
-            return new TreeSet<>();
-        }
-
-        // 通过适配器抓取用户的尝试记录
-        SortedSet<UserTryProblem> set = new TreeSet<>();
-        for (IExtOJAdapter adapter : adapters) {
-            try {
-                set.addAll(adapter.getUserTriesOnline(user.get()));  // 获取用户的尝试记录
-            } catch (Exception e) {
-                logger.error("获取用户名为 {} 的用户尝试记录出错", username, e);
-            }
-        }
-        logger.info("抓取用户 {} 的尝试记录，共 {} 条", username, set.size());
-        return set;
-    }
-
-
-
     /**
      * 并行抓取所有题目信息
      */

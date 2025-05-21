@@ -9,10 +9,14 @@ import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 /**
  * HttpUtil：提供多种 HTTP 请求方式，包括原生 Java URL、Jsoup 及 HTTPS 支持。
@@ -114,6 +118,105 @@ public class HttpUtil {
             }, 5);
         } catch (Exception e) {
             throw new RuntimeException("readHttpsURL 失败: " + urlString, e);
+        }
+    }
+
+
+// =====================================带cookie的
+
+    /**
+     * 带 Cookie 的原生 URL GET 请求，最多重试 5 次
+     *
+     * @param urlString 请求地址
+     * @param cookies   要注入的 Cookie（key→value）
+     * @return 响应文本
+     */
+    public String readURL(String urlString, Map<String, String> cookies) {
+        try {
+            return repeatDo((Callable<String>) () -> {
+                logger.info("[*] readURL with cookies: {}", urlString);
+                HttpURLConnection conn = (HttpURLConnection) new URL(urlString).openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+
+                // 拼装 Cookie 头
+                if (cookies != null && !cookies.isEmpty()) {
+                    String cookieHeader = cookies.entrySet().stream()
+                            .map(e -> e.getKey() + "=" + e.getValue())
+                            .collect(Collectors.joining("; "));
+                    conn.setRequestProperty("Cookie", cookieHeader);
+                }
+
+                try (InputStream in = conn.getInputStream()) {
+                    return IOUtils.toString(in, StandardCharsets.UTF_8);
+                }
+            }, 5);
+        } catch (Exception e) {
+            throw new RuntimeException("readURL with cookies 失败: " + urlString, e);
+        }
+    }
+
+    /**
+     * 带 Cookie 的 Jsoup GET 请求，最多重试 5 次
+     *
+     * @param urlString 请求地址
+     * @param cookies   要注入的 Cookie（key→value）
+     * @return 解析后的 Document
+     */
+    public Document readJsoupURL(String urlString, Map<String, String> cookies) {
+        try {
+            return repeatDo((Callable<Document>) () -> {
+                logger.info("[*] readJsoupURL with cookies: {}", urlString);
+                return Jsoup.connect(urlString)
+                        .timeout(8000)
+                        .ignoreContentType(true)
+                        .cookies(cookies == null ? Map.of() : cookies)
+                        .get();
+            }, 5);
+        } catch (Exception e) {
+            throw new RuntimeException("readJsoupURL with cookies 失败: " + urlString, e);
+        }
+    }
+
+    /**
+     * 带 Cookie 的原生 HTTPS GET 请求，最多重试 5 次
+     *
+     * @param urlString 请求地址
+     * @param cookies   要注入的 Cookie（key→value）
+     * @return 响应文本
+     */
+    public String readHttpsURL(String urlString, Map<String, String> cookies) {
+        try {
+            return repeatDo((Callable<String>) () -> {
+                logger.info("[*] readHttpsURL with cookies: {}", urlString);
+                HttpURLConnection conn = (HttpURLConnection) new URL(urlString).openConnection();
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+
+                // 拼装 Cookie 头
+                if (cookies != null && !cookies.isEmpty()) {
+                    String cookieHeader = cookies.entrySet().stream()
+                            .map(e -> e.getKey() + "=" + e.getValue())
+                            .collect(Collectors.joining("; "));
+                    conn.setRequestProperty("Cookie", cookieHeader);
+                }
+
+                BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8)
+                );
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                reader.close();
+                return sb.toString();
+            }, 5);
+        } catch (Exception e) {
+            throw new RuntimeException("readHttpsURL with cookies 失败: " + urlString, e);
         }
     }
 }
