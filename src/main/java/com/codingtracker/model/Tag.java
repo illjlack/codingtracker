@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.io.Serializable;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -15,10 +16,12 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Tag implements Serializable {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @EqualsAndHashCode.Include
     private Long id;
 
     /** 标签名称，例如 "binary search" */
@@ -26,6 +29,10 @@ public class Tag implements Serializable {
     private String name;
 
     /** 反向关联到题目 */
-    @ManyToMany(mappedBy = "tags")
-    private Set<ExtOjPbInfo> problems;
+    @ManyToMany(mappedBy = "tags", fetch = FetchType.LAZY)
+    private Set<ExtOjPbInfo> problems = new HashSet<>();
+
+    public Tag(String tagName) {
+        this.name = tagName;
+    }
 }

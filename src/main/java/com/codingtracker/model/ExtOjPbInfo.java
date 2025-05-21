@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.io.Serializable;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -25,7 +26,7 @@ public class ExtOjPbInfo implements Serializable {
     @Enumerated(EnumType.STRING)
     private OJPlatform ojName;
 
-    /**在cf中 比赛id+ 题号**/
+    /** 在 cf 中比赛 id + 题号 **/
     @Column(length = 10)
     private String pid;
 
@@ -47,11 +48,12 @@ public class ExtOjPbInfo implements Serializable {
     /**
      * 题目标签，通过中间表 problem_tags 关联到 tag 表
      */
-    @ManyToMany(fetch = FetchType.EAGER)
+    @ManyToMany(fetch = FetchType.LAZY,
+            cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinTable(
             name = "problem_tags",
             joinColumns = @JoinColumn(name = "problem_id"),
             inverseJoinColumns = @JoinColumn(name = "tag_id")
     )
-    private Set<Tag> tags;
+    private Set<Tag> tags = new HashSet<>();
 }

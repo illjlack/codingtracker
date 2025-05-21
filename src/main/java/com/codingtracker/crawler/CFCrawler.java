@@ -6,6 +6,7 @@ import com.codingtracker.repository.ExtOjPbInfoRepository;
 import com.codingtracker.repository.TagRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -104,6 +105,7 @@ public class CFCrawler {
      * @param user 当前用户名
      * @return UserTryProblem 列表
      */
+    @Transactional
     public List<UserTryProblem> userTryProblems(User user) {
         // 获取当前 OJ 平台的链接配置
         ExtOjLink ojLink = extOjLinkRepository.findById(getOjType())
@@ -172,12 +174,51 @@ public class CFCrawler {
                                         .type(p.path("type").asText())
                                         .points(p.has("points") ? p.path("points").asDouble() : null)
                                         .url(problemUrl)
-                                        .tags(Set.of())
+                                        .tags(new HashSet<>())
                                         .build();
                                 return extOjPbInfoRepository.save(e);
                             });
 
-                    // 4. 构造尝试记录
+                    // 取到 problem JSON 里的 tags 字符串列表
+                    Set<String> tagNames = new HashSet<>();
+                    JsonNode tagsNode = p.path("tags");
+                    if (tagsNode.isArray()) {
+                        for (JsonNode t : tagsNode) {
+                            tagNames.add(t.asText());
+                        }
+                    }
+
+                    // —— 1. 查出已经存在的 Tag 实体
+                    List<Tag> existingTags = tagRepository.findByNameIn(tagNames);
+                    Set<String> existingNames = existingTags.stream()
+                            .map(Tag::getName)
+                            .collect(Collectors.toSet());
+
+                    // —— 2. 新的标签名字，构造成 Tag 实体并保存
+                    List<Tag> newTags = tagNames.stream()
+                            .filter(name -> !existingNames.contains(name))
+                            .map(Tag::new)
+                            .collect(Collectors.toList());
+                    if (!newTags.isEmpty()) {
+                        newTags = tagRepository.saveAll(newTags);
+                    }
+
+                    // —— 3. 合并成真正要关联到题目的 Tag 实体集合
+                    Set<Tag> tagsForProblem = new HashSet<>();
+                    tagsForProblem.addAll(existingTags);
+                    tagsForProblem.addAll(newTags);
+
+                    // —— 4. 设置到 owning side，然后保存 ExtOjPbInfo
+                    info.setTags(tagsForProblem);
+                    info = extOjPbInfoRepository.save(info);
+
+                    // （可选）—— 如果你还想维护 inverse side 的内存状态
+                    for (Tag tag : tagsForProblem) {
+                        tag.getProblems().add(info);
+                    }
+                    tagRepository.saveAll(tagsForProblem);
+
+                    // 5. 构造尝试记录
                     tries.add(UserTryProblem.builder()
                             .user(user)
                             .extOjPbInfo(info)

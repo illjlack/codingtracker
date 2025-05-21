@@ -48,33 +48,46 @@ public class ExtOjService {
         return adapters;
     }
 
-    /**
-     * 并行抓取指定用户列表的尝试记录
-     */
     private SortedSet<UserTryProblem> fetchAllUserTries(List<User> users) {
         SortedSet<UserTryProblem> set = new TreeSet<>();
         logger.info("开始抓取 {} 位用户的尝试记录", users.size());
 
-        ExecutorService pool = Executors.newFixedThreadPool(adapters.size());
+        ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors()); // 限制线程池大小
         List<Future<List<UserTryProblem>>> futures = new ArrayList<>();
 
+        // 提交任务
         for (IExtOJAdapter adapter : adapters) {
             for (User user : users) {
                 futures.add(pool.submit(() -> adapter.getUserTriesOnline(user)));
             }
         }
-        pool.shutdown();
 
+        try {
+            pool.shutdown();
+            if (!pool.awaitTermination(10, TimeUnit.MINUTES)) {  // 等待任务完成
+                logger.warn("所有任务未在指定时间内完成，强制关闭线程池");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("线程池等待任务完成时发生中断", e);
+        }
+
+        // 处理所有结果
         for (Future<List<UserTryProblem>> f : futures) {
             try {
-                set.addAll(f.get(60, TimeUnit.SECONDS));
-            } catch (Exception e) {
+                List<UserTryProblem> problems = f.get(30, TimeUnit.SECONDS);  // 限制超时时间
+                set.addAll(problems);
+            } catch (TimeoutException | InterruptedException e) {
+                logger.error("任务超时", e);
+            } catch (ExecutionException e) {
                 logger.error("获取尝试记录出错", e);
             }
         }
+
         logger.info("抓取完成，共 {} 条尝试记录", set.size());
         return set;
     }
+
 
     /**
      * 根据用户名查找并更新单个用户的尝试记录

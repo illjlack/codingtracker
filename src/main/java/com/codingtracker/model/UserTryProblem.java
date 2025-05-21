@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 @ToString
-public class UserTryProblem implements Serializable {
+public class UserTryProblem implements Serializable,Comparable<UserTryProblem>{
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -49,4 +49,22 @@ public class UserTryProblem implements Serializable {
      */
     @Column(name = "attempt_time", nullable = false)
     private LocalDateTime attemptTime;
+
+
+    @Override
+    public int compareTo(UserTryProblem other) {
+        int userComparison = this.getUser().getId().compareTo(other.getUser().getId());
+        if (userComparison != 0) {
+            return userComparison;
+        }
+        int problemComparison = this.getExtOjPbInfo().getId().compareTo(other.getExtOjPbInfo().getId());
+        if (problemComparison != 0) {
+            return problemComparison;
+        }
+        int timeComparison = this.getAttemptTime().compareTo(other.getAttemptTime());
+        if (timeComparison != 0) {
+            return timeComparison;
+        }
+        return this.getResult().compareTo(other.getResult());
+    }
 }
