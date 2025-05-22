@@ -49,11 +49,11 @@
   },
   "luogu": {
     "indexLink": "https://www.luogu.com.cn/",
-    "userInfoLink": "https://www.luogu.com.cn/user/%s",
+    "userInfoLink": "https://www.luogu.com.cn/record/list?user=%s&page=%s&_contentOnly=1",
     "pbStatusLink": "",
     "problemLink": "https://www.luogu.com.cn/problem/%s",
     "loginLink": "https://www.luogu.com.cn/account/login",
-    "authToken": "__client_id=7b0455ad8f8ea2bc6e7434d681e8ab799e3b9b0c; _uid=576200"
+    "authToken": "__client_id=e76e0355af9c776997c21a3b50be18d9817dbc13; _uid=576200"
   },
   "atcoder": {
     "indexLink": "https://atcoder.jp/",

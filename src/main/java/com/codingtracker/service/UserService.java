@@ -237,12 +237,53 @@ public class UserService {
     }
 
     /**
+     * 查询所有用户
+     */
+    public List<User> findAllUsers() {
+        return userRepository.findAll();
+    }
+
+    /**
+     * 根据 ID 查找用户
+     */
+    public Optional<User> findById(Integer id) {
+        return userRepository.findById(id);
+    }
+
+    /**
+     * 创建新用户
+     */
+    public User createUser(User u) {
+        // 这里可以在保存前做一些校验 / 加密密码等
+        return userRepository.save(u);
+    }
+
+    /**
+     * 更新已有用户
+     */
+    public User updateUser(User u) {
+        // 只会更新存在的记录，否则抛出异常或根据需要自行处理
+        return userRepository.save(u);
+    }
+
+    /**
+     * 根据 ID 判断用户是否存在
+     */
+    public boolean existsById(Integer id) {
+        return userRepository.existsById(id);
+    }
+
+    /**
+     * 删除用户
+     */
+    public void deleteUser(Integer id) {
+        userRepository.deleteById(id);
+    }
+
+    /**
      * 根据用户名获取所有 OJ 账号
-     *
-     * @param username 用户名
-     * @return 用户的所有 OJ 账号列表
      */
     public List<UserOJ> getOJAccountsByUsername(String username) {
-        return userOJRepository.findByUserUsername(username);  // 查找所有与用户名关联的 OJ 账号
+        return userOJRepository.findByUserUsername(username);
     }
 }

@@ -79,7 +79,8 @@ public class UserController {
         boolean deleted = userService.deleteOJAccount(username, platform, accountName);
 
         // 如果删除成功，返回 204 No Content
-        if (deleted) {
+        if (deleted)
+        {
             return ResponseEntity.noContent().build();
         }
 

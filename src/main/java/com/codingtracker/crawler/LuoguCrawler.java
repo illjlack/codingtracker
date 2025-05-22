@@ -1,5 +1,6 @@
 package com.codingtracker.crawler;
 
+import com.codingtracker.init.TagMetaLoader;
 import com.codingtracker.model.*;
 import com.codingtracker.repository.ExtOjLinkRepository;
 import com.codingtracker.repository.ExtOjPbInfoRepository;
@@ -18,7 +19,9 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 /**
  * LuoguCrawler 类（Luogu OJ 爬虫），
@@ -43,6 +46,9 @@ public class LuoguCrawler {
     @Autowired
     private TagRepository tagRepo;
 
+    @Autowired
+    private TagMetaLoader tagMetaLoader;
+
     /**
      * 本爬虫对应的平台类型
      */
@@ -64,29 +70,46 @@ public class LuoguCrawler {
     /**
      * 拉取单个 Luogu 题目信息并构建实体
      */
-    private ExtOjPbInfo fetchProblem(String pid) {
+    public ExtOjPbInfo fetchProblem(String pid) {
         ExtOjLink link = linkRepo.findById(getOjType())
                 .orElseThrow(() -> new RuntimeException("Missing Luogu link config"));
         String url = String.format(link.getProblemLink(), pid);
-        String rawCookie = link.getAuthToken();
-        Map<String,String> cookies = parseCookies(rawCookie);
+        Map<String, String> cookies = parseCookies(link.getAuthToken());
 
         logger.info("调用 Luogu 题目详情页面，url：{}", url);
         try {
+            // 1) 取页面并解析 JSON
             Document doc = httpUtil.readJsoupURL(url, cookies);
-            // 解析题目标题
-            String title = Optional.ofNullable(doc.selectFirst(".ttitle"))
-                    .map(Element::text)
-                    .orElse(doc.title());
-            // 解析标签
-            Set<Tag> tags = new HashSet<>();
-            Elements tagEls = doc.select(".tags .tag");
-            for (Element t : tagEls) {
-                String name = t.text();
-                Tag tag = tagRepo.findByName(name)
-                        .orElseGet(() -> tagRepo.save(Tag.builder().name(name).build()));
-                tags.add(tag);
-            }
+            String ctxJson = doc.getElementById("lentille-context").html();
+            JsonNode problemNode = new ObjectMapper()
+                    .readTree(ctxJson)
+                    .path("data")
+                    .path("problem");
+
+            // 2) 标题优先取 JSON，再 fallback 到 DOM
+            String title = Optional.ofNullable(problemNode.path("title").asText(null))
+                    .filter(t -> !t.isEmpty())
+                    .orElseGet(() -> Optional.ofNullable(doc.selectFirst(".ttitle"))
+                            .map(Element::text)
+                            .orElse(doc.title()));
+
+            // 3) 拿到题目所有 tag ID
+            List<Integer> tagIds = new ArrayList<>();
+            problemNode.path("tags").forEach(n -> tagIds.add(n.asInt()));
+
+            // 4) 使用 TagMetaLoader 从内存中映射出每个 TagMetaDTO，然后存库
+            Set<Tag> tags = tagIds.stream()
+                    .map(tagMetaLoader::get)                    // 从内存 Map 拿 DTO
+                    .filter(Objects::nonNull)
+                    .map(dto -> tagRepo
+                            .findByName(dto.getName())         // 先按 name 查
+                            .orElseGet(() -> tagRepo.save(
+                                    Tag.builder()
+                                            .name(dto.getName())
+                                            .build())))
+                    .collect(Collectors.toSet());
+
+            // 5) 构建并返回
             return ExtOjPbInfo.builder()
                     .ojName(getOjType())
                     .pid(pid)
@@ -96,66 +119,100 @@ public class LuoguCrawler {
                     .url(url)
                     .tags(tags)
                     .build();
+
         } catch (Exception e) {
             logger.error("拉取 Luogu 题目 {} 信息失败", pid, e);
             return null;
         }
     }
-
-    /**
-     * 获取指定用户的所有 AC 题目尝试记录
-     */
     public List<UserTryProblem> userTryProblems(User user) {
         ExtOjLink link = linkRepo.findById(getOjType())
                 .orElseThrow(() -> new RuntimeException("Missing Luogu link config"));
-        String tpl = link.getUserInfoLink(); // e.g. "https://www.luogu.com.cn/api/problem/user?uid=%s&page=%d"
+        String tpl = link.getUserInfoLink();
+        Map<String,String> cookies = parseCookies(link.getAuthToken());
 
-        // 收集用户所有 Luogu 账号（UID）
+        // 收集所有 uid
         List<String> uids = user.getOjAccounts().stream()
                 .filter(uo -> uo.getPlatform() == getOjType())
                 .map(UserOJ::getAccountName)
                 .flatMap(s -> Arrays.stream(s.split("\\s*,\\s*")))
                 .filter(s -> !s.isBlank())
-                .collect(Collectors.toList());
-        if (uids.isEmpty()) {
-            logger.warn("用户 {} 未配置 {} 账号", user.getUsername(), getOjType());
-            return Collections.emptyList();
-        }
+                .toList();
+        if (uids.isEmpty()) return Collections.emptyList();
 
-        List<UserTryProblem> tries = new ArrayList<>();
-        for (String uid : uids) {
+        // 1) 先把所有页面的数据拉到内存
+        List<JsonNode> allRecs = new ArrayList<>();
+        uids.forEach(uid -> {
             int page = 1;
             while (true) {
                 String url = String.format(tpl, uid, page);
                 logger.info("调用 Luogu 用户 AC 接口，url：{}", url);
                 try {
-                    String json = httpUtil.readURL(url);
+                    String json = httpUtil.readURL(url, cookies);
                     JsonNode arr = mapper.readTree(json)
                             .path("currentData").path("records").path("result");
-                    if (!arr.isArray() || arr.size() == 0) break;
-                    for (JsonNode rec : arr) {
-                        String pid = rec.path("problem").path("pid").asText();
-                        LocalDateTime now = LocalDateTime.now();
-                        ExtOjPbInfo info = pbInfoRepo.findByOjNameAndPid(getOjType(), pid)
-                                .orElseGet(() -> {
-                                    ExtOjPbInfo p = fetchProblem(pid);
-                                    return (p != null) ? pbInfoRepo.save(p) : null;
-                                });
-                        if (info == null) continue;
-                        tries.add(UserTryProblem.builder()
-                                .user(user)
-                                .extOjPbInfo(info)
-                                .result(ProblemResult.AC)
-                                .attemptTime(now)
-                                .build());
-                    }
+                    if (!arr.isArray() || arr.isEmpty()) break;
+                    arr.forEach(allRecs::add);
                     page++;
                 } catch (IOException e) {
                     logger.error("获取 Luogu 用户 {} 第 {} 页记录失败", uid, page, e);
                     break;
                 }
             }
-        }
+        });
+
+        // 2) 收集所有 PID，并一次性查库
+        Set<String> allPids = allRecs.stream()
+                .map(r -> r.path("problem").path("pid").asText())
+                .collect(Collectors.toSet());
+        List<ExtOjPbInfo> existInfos = pbInfoRepo
+                .findAllByOjNameAndPidIn(getOjType(), allPids);
+        Map<String, ExtOjPbInfo> infoMap = existInfos.stream()
+                .collect(Collectors.toMap(ExtOjPbInfo::getPid, Function.identity()));
+
+        List<ExtOjPbInfo> toInsert = new ArrayList<>();
+        List<ExtOjPbInfo> toUpdate = new ArrayList<>();
+        List<UserTryProblem> tries    = new ArrayList<>();
+
+        // 3) 遍历内存记录，构建或更新 ExtOjPbInfo，并生成 UserTryProblem
+        allRecs.forEach(rec -> {
+            String pid   = rec.path("problem").path("pid").asText();
+            String title = rec.path("problem").path("title").asText();
+            long secs    = rec.path("submitTime").asLong();
+            LocalDateTime attemptTime = LocalDateTime.ofEpochSecond(secs,0,ZoneOffset.UTC);
+
+            ExtOjPbInfo info = infoMap.get(pid);
+            if (info == null) {
+                // 新题目
+                info = ExtOjPbInfo.builder()
+                        .ojName(getOjType())
+                        .pid(pid)
+                        .name(title)
+                        .type("PROGRAMMING")
+                        .points(null)
+                        .url(String.format(link.getProblemLink(), pid))
+                        .tags(Collections.emptySet())
+                        .build();
+                toInsert.add(info);
+                infoMap.put(pid, info);
+            } else if (!Objects.equals(info.getName(), title)) {
+                // 标题有更新
+                info.setName(title);
+                toUpdate.add(info);
+            }
+
+            tries.add(UserTryProblem.builder()
+                    .user(user)
+                    .extOjPbInfo(info)
+                    .result(ProblemResult.AC)
+                    .attemptTime(attemptTime)
+                    .build());
+        });
+
+        // 4) 批量写库
+        if (!toInsert.isEmpty()) pbInfoRepo.saveAll(toInsert);
+        if (!toUpdate.isEmpty()) pbInfoRepo.saveAll(toUpdate);
+
         logger.info("Luogu 用户 {} 共抓取到 {} 条尝试记录", user.getUsername(), tries.size());
         return tries;
     }

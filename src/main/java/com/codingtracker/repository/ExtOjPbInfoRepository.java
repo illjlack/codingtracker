@@ -7,6 +7,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * 外部 OJ 题目信息仓库，
@@ -24,4 +25,6 @@ public interface ExtOjPbInfoRepository extends JpaRepository<ExtOjPbInfo, Long> 
      * 按 OJ 平台 + 题目 ID 查询单个题目信息
      */
     Optional<ExtOjPbInfo> findByOjNameAndPid(OJPlatform ojName, String pid);
+
+    List<ExtOjPbInfo> findAllByOjNameAndPidIn(OJPlatform ojType, Set<String> allPids);
 }
