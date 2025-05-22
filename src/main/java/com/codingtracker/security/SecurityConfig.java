@@ -5,12 +5,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -26,20 +33,46 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
-    // 配置HTTP安全策略
+    // 这个 Bean 用来给 cors() 用的
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration cfg = new CorsConfiguration();
+        // 允许所有域名发起跨域
+        cfg.setAllowedOriginPatterns(List.of("*"));
+        // 允许这些方法
+        cfg.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        // 允许带这些头
+        cfg.setAllowedHeaders(List.of("*"));
+        // 允许带 Cookie / Authorization
+        cfg.setAllowCredentials(true);
+
+        UrlBasedCorsConfigurationSource src = new UrlBasedCorsConfigurationSource();
+        // 对所有 /api/** 路径都应用上面这个 CORS 配置
+        src.registerCorsConfiguration("/api/**", cfg);
+        return src;
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(AbstractHttpConfigurer::disable) // 禁用 CSRF (一般用于API，不需要CSRF保护)
+                // 先开启 cors
+                .cors(Customizer.withDefaults())
+                // 然后再禁用 csrf
+                .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("api/auth/login", "api/auth/register").permitAll() // 允许 /login 和 /register 不需要认证
-                        //.anyRequest().authenticated() // 其余所有请求都需要认证
-                        .requestMatchers(HttpMethod.PUT).permitAll()  // 允许所有 PUT 请求
-                        .requestMatchers(HttpMethod.DELETE).permitAll()  // 允许所有 DELETE 请求
-                        .anyRequest().permitAll()
+                        // 允许所有预检请求
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        // 登录 & 注册 不需要认证
+                        .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register").permitAll()
+                        // 其它接口都需要走 JWT 认证
+                        .anyRequest().authenticated()
                 )
-                .httpBasic(AbstractHttpConfigurer::disable); // 禁用 HTTP Basic 验证
-        return http.build(); // 构建并返回 SecurityFilterChain
+                // 在 UsernamePasswordFilter 之前插入你的 JWT 校验过滤器
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                // 不启用默认的 basic auth
+                .httpBasic(AbstractHttpConfigurer::disable);
+
+        return http.build();
     }
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

@@ -1,8 +1,8 @@
 package com.codingtracker.controller.api.training;
 
+import com.codingtracker.DTO.ApiResponse;
 import com.codingtracker.DTO.UserTryProblemDTO;
 import com.codingtracker.model.User;
-import com.codingtracker.model.UserTryProblem;
 import com.codingtracker.service.ExtOjService;
 import com.codingtracker.service.UserService;
 import org.slf4j.Logger;
@@ -10,14 +10,15 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.HttpStatus;
 
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+/**
+ * 用户尝试记录相关接口
+ */
 @RestController
 @RequestMapping("/usertry")
 public class UserTryController {
@@ -30,37 +31,44 @@ public class UserTryController {
     /**
      * 获取指定用户的所有尝试记录
      */
-    @GetMapping("/{username}/list")
-    public ResponseEntity<Map<String, Object>> list(@PathVariable String username) {
-        Optional<User> user = userService.getUserByUsername(username);
-        if (user.isEmpty()) {
-            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+    @GetMapping("/list/{username}")
+    public ApiResponse<Map<String, Object>> list(@PathVariable String username) {
+        Optional<User> userOpt = userService.getUserByUsername(username);
+        if (userOpt.isEmpty()) {
+            logger.warn("User not found: {}", username);
+            return ApiResponse.error("用户未找到");
         }
-        List<UserTryProblemDTO> list= extOjService.getUserTries(user.get()).stream()
-                .map(userTryProblem -> new UserTryProblemDTO(userTryProblem, username)) // 使用构造函数转换
-                .toList();
-        Map<String, Object> result = Map.of(
+        List<UserTryProblemDTO> dtoList = extOjService.getUserTries(userOpt.get()).stream()
+                .map(utp -> new UserTryProblemDTO(utp, username))
+                .collect(Collectors.toList());
+
+        Map<String, Object> data = Map.of(
                 "username", username,
-                "userTryProblems", list
+                "userTryProblems", dtoList
         );
-        return new ResponseEntity<>(result, HttpStatus.OK);
+        return ApiResponse.ok("查询成功", data);
     }
 
     /**
      * 更新数据库中的用户尝试记录
      */
-    @PostMapping(value = "/updatedb", produces = "text/html;charset=UTF-8")
-    public ResponseEntity<String> updatedb() {
+    @PostMapping("/updatedb")
+    public ApiResponse<Void> updatedb() {
         String username = SecurityContextHolder.getContext().getAuthentication().getName();
-        Optional<User> user = userService.getUserByUsername(username);
-        if (user.isEmpty()) {
-            return new ResponseEntity<>("您没有登录", HttpStatus.BAD_REQUEST);
+        Optional<User> userOpt = userService.getUserByUsername(username);
+        if (userOpt.isEmpty()) {
+            logger.warn("Unauthorized update attempt");
+            return ApiResponse.error("您没有登录");
         }
-        if (user.get().isAdmin()) {
-            extOjService.flushTriesDB();  // 修改为刷新所有用户的尝试记录
+
+        if (userOpt.get().isAdmin()) {
+            logger.info("Admin {} flushes all user tries", username);
+            extOjService.flushTriesDB();
         } else {
-            extOjService.flushTriesByUser(user.get());  // 修改为刷新单个用户的尝试记录
+            logger.info("User {} flushes own tries", username);
+            extOjService.flushTriesByUser(userOpt.get());
         }
-        return new ResponseEntity<>("更新完毕", HttpStatus.OK);
+
+        return ApiResponse.ok("更新完毕", null);
     }
 }

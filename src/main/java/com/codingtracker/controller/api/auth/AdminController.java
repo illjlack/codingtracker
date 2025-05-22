@@ -1,5 +1,6 @@
 package com.codingtracker.controller.api.auth;
 
+import com.codingtracker.DTO.ApiResponse;
 import com.codingtracker.model.User;
 import com.codingtracker.service.UserService;
 import jakarta.annotation.security.RolesAllowed;
@@ -7,7 +8,6 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -30,25 +30,25 @@ public class AdminController {
 
     /** 列出所有用户 */
     @GetMapping("/users")
-    public ResponseEntity<List<UserResponse>> listUsers() {
+    public ApiResponse<List<UserResponse>> listUsers() {
         List<User> users = userService.findAllUsers();
         List<UserResponse> resp = users.stream()
                 .map(UserResponse::from)
                 .collect(Collectors.toList());
-        return ResponseEntity.ok(resp);
+        return ApiResponse.ok(resp);
     }
 
     /** 获取单个用户详情 */
     @GetMapping("/users/{id}")
-    public ResponseEntity<UserResponse> getUser(@PathVariable Integer id) {
+    public ApiResponse<UserResponse> getUser(@PathVariable Integer id) {
         return userService.findById(id)
-                .map(u -> ResponseEntity.ok(UserResponse.from(u)))
-                .orElseGet(() -> ResponseEntity.notFound().build());
+                .map(u -> ApiResponse.ok(UserResponse.from(u)))
+                .orElseGet(() -> ApiResponse.error("用户未找到"));
     }
 
     /** 创建新用户 */
     @PostMapping("/users")
-    public ResponseEntity<UserResponse> createUser(@RequestBody CreateUserRequest req) {
+    public ApiResponse<UserResponse> createUser(@RequestBody CreateUserRequest req) {
         User u = new User();
         u.setUsername(req.getUsername());
         u.setPassword(req.getPassword());
@@ -62,13 +62,13 @@ public class AdminController {
         }
         User saved = userService.createUser(u);
         log.info("Admin created user {}", saved.getUsername());
-        return ResponseEntity.ok(UserResponse.from(saved));
+        return ApiResponse.ok("创建成功", UserResponse.from(saved));
     }
 
     /** 更新单个用户 */
     @PutMapping("/users/{id}")
-    public ResponseEntity<UserResponse> updateUser(@PathVariable Integer id,
-                                                   @RequestBody UpdateUserRequest req) {
+    public ApiResponse<UserResponse> updateUser(@PathVariable Integer id,
+                                                @RequestBody UpdateUserRequest req) {
         return userService.findById(id).map(u -> {
             if (req.getRealName() != null) u.setRealName(req.getRealName());
             if (req.getMajor()   != null) u.setMajor(req.getMajor());
@@ -80,24 +80,24 @@ public class AdminController {
             }
             User updated = userService.updateUser(u);
             log.info("Admin updated user {}", updated.getUsername());
-            return ResponseEntity.ok(UserResponse.from(updated));
-        }).orElseGet(() -> ResponseEntity.notFound().build());
+            return ApiResponse.ok("更新成功", UserResponse.from(updated));
+        }).orElseGet(() -> ApiResponse.error("用户未找到"));
     }
 
     /** 删除单个用户 */
     @DeleteMapping("/users/{id}")
-    public ResponseEntity<?> deleteUser(@PathVariable Integer id) {
+    public ApiResponse<Void> deleteUser(@PathVariable Integer id) {
         if (!userService.existsById(id)) {
-            return ResponseEntity.notFound().build();
+            return ApiResponse.error("用户未找到");
         }
         userService.deleteUser(id);
         log.info("Admin deleted user id={}", id);
-        return ResponseEntity.ok().build();
+        return ApiResponse.ok("删除成功", null);
     }
 
     /** 批量更新用户信息 */
     @PostMapping("/users/batch")
-    public ResponseEntity<List<UserResponse>> batchUpdate(@RequestBody List<UpdateUserRequest> reqs) {
+    public ApiResponse<List<UserResponse>> batchUpdate(@RequestBody List<UpdateUserRequest> reqs) {
         List<UserResponse> results = new ArrayList<>();
         for (UpdateUserRequest req : reqs) {
             userService.findById(req.getId()).ifPresent(u -> {
@@ -114,7 +114,7 @@ public class AdminController {
                 log.info("Admin batch updated user {}", updated.getUsername());
             });
         }
-        return ResponseEntity.ok(results);
+        return ApiResponse.ok("批量更新完成", results);
     }
 
     // —— DTOs —— //
