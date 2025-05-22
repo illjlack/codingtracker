@@ -1,5 +1,6 @@
 package com.codingtracker.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -30,6 +31,7 @@ public class Tag implements Serializable {
 
     /** 反向关联到题目 */
     @ManyToMany(mappedBy = "tags", fetch = FetchType.LAZY)
+    @JsonIgnore
     private Set<ExtOjPbInfo> problems = new HashSet<>();
 
     public Tag(String tagName) {
