@@ -55,7 +55,7 @@ public class AdminController {
         u.setRealName(req.getRealName());
         u.setMajor(req.getMajor());
         u.setEmail(req.getEmail());
-        u.setBlogUrl(req.getBlogUrl());
+        u.setAvatar(req.getAvatar());
         u.getRoles().clear();
         if (req.getRoles() != null) {
             req.getRoles().forEach(r -> u.getRoles().add(User.Type.valueOf(r)));
@@ -73,7 +73,7 @@ public class AdminController {
             if (req.getRealName() != null) u.setRealName(req.getRealName());
             if (req.getMajor()   != null) u.setMajor(req.getMajor());
             if (req.getEmail()   != null) u.setEmail(req.getEmail());
-            if (req.getBlogUrl() != null) u.setBlogUrl(req.getBlogUrl());
+            if (req.getAvatar() != null) u.setAvatar(req.getAvatar());
             if (req.getRoles()   != null) {
                 u.getRoles().clear();
                 req.getRoles().forEach(r -> u.getRoles().add(User.Type.valueOf(r)));
@@ -104,7 +104,7 @@ public class AdminController {
                 if (req.getRealName() != null) u.setRealName(req.getRealName());
                 if (req.getMajor()   != null) u.setMajor(req.getMajor());
                 if (req.getEmail()   != null) u.setEmail(req.getEmail());
-                if (req.getBlogUrl() != null) u.setBlogUrl(req.getBlogUrl());
+                if (req.getAvatar() != null) u.setAvatar(req.getAvatar());
                 if (req.getRoles()   != null) {
                     u.getRoles().clear();
                     req.getRoles().forEach(r -> u.getRoles().add(User.Type.valueOf(r)));
@@ -126,7 +126,7 @@ public class AdminController {
         private String realName;
         private String major;
         private String email;
-        private String blogUrl;
+        private String avatar;
         private Set<User.Type> roles;
         private Date lastTryDate;
 
@@ -137,7 +137,7 @@ public class AdminController {
             r.setRealName(u.getRealName());
             r.setMajor(u.getMajor());
             r.setEmail(u.getEmail());
-            r.setBlogUrl(u.getBlogUrl());
+            r.setAvatar(u.getAvatar());
             r.setRoles(u.getRoles());
             if (u.getLastTryDate() != null) {
                 r.setLastTryDate(java.sql.Timestamp.valueOf(u.getLastTryDate()));
@@ -153,7 +153,7 @@ public class AdminController {
         private String realName;
         private String major;
         private String email;
-        private String blogUrl;
+        private String avatar;
         private Set<String> roles;
     }
 
@@ -163,7 +163,7 @@ public class AdminController {
         private String realName;
         private String major;
         private String email;
-        private String blogUrl;
+        private String avatar;
         private Set<String> roles;
     }
 }

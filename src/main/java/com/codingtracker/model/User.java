@@ -76,10 +76,10 @@ public class User implements Serializable, Comparable<User> {
 
     private String email;
     /**
-     * 博客地址，最多支持 1024 个字符
+     * 头像地址，最多支持 1024 个字符
      */
     @Column(length = 1024)
-    private String blogUrl;
+    private String avatar;
 
     /**
      * 最后一次尝试的时间

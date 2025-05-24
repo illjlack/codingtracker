@@ -2,6 +2,7 @@
 package com.codingtracker.controller.api.auth;
 
 import com.codingtracker.DTO.ApiResponse;
+import com.codingtracker.DTO.UserInfoDTO;
 import com.codingtracker.model.User;
 import com.codingtracker.service.UserService;
 import com.codingtracker.util.JwtUtils;
@@ -9,7 +10,11 @@ import lombok.Getter;
 import lombok.Setter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -24,15 +29,18 @@ public class AuthController {
 
     // 用户登录并返回 token
     @PostMapping("/login")
-    public ApiResponse<String> login(@RequestBody LoginRequest req) {
-        logger.info("Login attempt for user: {}", req.username);
+    public ApiResponse<Map<String, Object>>  login(@RequestBody LoginRequest req) {
+        logger.info("用户登录尝试: 用户名={}", req.username);
         User user = userService.valid(req.username, req.password);
         if (user != null) {
             String token = JwtUtils.generateToken(req.username);
-            logger.info("Login successful for user: {}", req.username);
-            return ApiResponse.ok("登录成功", token);
+            logger.info("用户登录成功: 用户名={}", req.username);
+            Map<String, Object> data = Map.of(
+                    "token", token
+            );
+            return ApiResponse.ok("登录成功", data);
         } else {
-            logger.warn("Login failed for user: {}", req.username);
+            logger.warn("用户登录失败: 用户名={}", req.username);
             return ApiResponse.error("用户名或密码错误");
         }
     }
@@ -40,7 +48,7 @@ public class AuthController {
     // 用户注册
     @PostMapping("/register")
     public ApiResponse<Void> register(@RequestBody RegisterRequest req) {
-        logger.info("Registration attempt for user: {}", req.username);
+        logger.info("用户注册尝试: 用户名={}", req.username);
         User user = new User();
         user.setUsername(req.username);
         user.setPassword(req.password);
@@ -51,41 +59,73 @@ public class AuthController {
 
         boolean ok = userService.registerUser(user);
         if (ok) {
-            logger.info("User registered successfully: {}", req.username);
+            logger.info("用户注册成功: 用户名={}", req.username);
             return ApiResponse.ok("注册成功，请登录！", null);
         } else {
-            logger.error("Registration failed for user: {}", req.username);
+            logger.error("用户注册失败: 用户名={}", req.username);
             return ApiResponse.error("注册失败！");
         }
     }
 
     // 修改用户信息
     @PutMapping("/modify")
-    public ApiResponse<Void> modifyUser(@RequestBody User user,
-                                        @RequestHeader("Authorization") String token) {
-        String username = JwtUtils.getUsernameFromToken(token.replace("Bearer ", ""));
-        if (username == null) {
-            logger.warn("Invalid or expired token for modification attempt.");
-            return ApiResponse.error("Token 无效或已过期");
+    public ApiResponse<Void> modifyUser(@RequestBody UserInfoDTO user) {
+        String username = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        logger.info("请求获取用户信息: 用户名={}", username);
+        Optional<User> userOpt = userService.getUserByUsername(username);
+        if (userOpt.isEmpty()) {
+            logger.warn("未找到用户信息: 用户名={}", username);
+            return ApiResponse.error("未找到用户信息");
         }
-        logger.info("Modifying user information for: {}", username);
+        UserInfoDTO dto = UserInfoDTO.fromUser(userOpt.get());
+
+        // 调用业务层修改
         userService.modifyUser(user);
-        return ApiResponse.ok("信息修改成功", null);
+        return ApiResponse.ok();
     }
 
     // 修改密码
     @PutMapping("/modifyPassword")
     public ApiResponse<Void> changePassword(@RequestBody ChangePasswordRequest req) {
-        logger.info("尝试修改密码，用户: {}", req.username);
+        logger.info("用户尝试修改密码: 用户名={}", req.username);
         User user = userService.valid(req.username, req.oldPassword);
         if (user != null) {
             userService.modifyUserPassword(user.getId(), req.newPassword);
-            logger.info("密码修改成功，用户: {}", req.username);
+            logger.info("用户密码修改成功: 用户名={}", req.username);
             return ApiResponse.ok("密码修改成功", null);
         } else {
-            logger.warn("旧密码错误或用户不存在，用户: {}", req.username);
+            logger.warn("用户密码修改失败（旧密码错误或用户不存在）: 用户名={}", req.username);
             return ApiResponse.error("旧密码错误或用户不存在");
         }
+    }
+
+    // 获取用户信息
+    @GetMapping("/userInfo")
+    public ApiResponse<UserInfoDTO> getUserInfo() {
+        String username = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        logger.info("请求获取用户信息: 用户名={}", username);
+        Optional<User> userOpt = userService.getUserByUsername(username);
+        if (userOpt.isEmpty()) {
+            logger.warn("未找到用户信息: 用户名={}", username);
+            return ApiResponse.error("未找到用户信息");
+        }
+        UserInfoDTO dto = UserInfoDTO.fromUser(userOpt.get());
+        logger.info("成功返回用户信息: 用户名={}", username);
+        return ApiResponse.ok("获取成功", dto);
+    }
+
+    // 用户登出
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout() {
+        String username = SecurityContextHolder.getContext()
+                .getAuthentication().getName();
+        logger.info("用户登出: 用户名={}", username);
+
+        // 此处可执行其它登出清理操作
+
+        return ApiResponse.ok("登出成功", null);
     }
 
     /** 请求体和内部 DTO **/

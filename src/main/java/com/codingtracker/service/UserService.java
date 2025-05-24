@@ -1,5 +1,6 @@
 package com.codingtracker.service;
 
+import com.codingtracker.DTO.UserInfoDTO;
 import com.codingtracker.model.OJPlatform;
 import com.codingtracker.model.UserOJ;
 import com.codingtracker.repository.UserOJRepository;
@@ -12,6 +13,7 @@ import com.codingtracker.model.User;
 import com.codingtracker.repository.UserRepository;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -83,19 +85,61 @@ public class UserService {
     /**
      * 修改用户信息
      * 
-     * @param user 修改后的用户信息
+     * @param userInfoDTO 修改后的用户信息
      */
     @Transactional
-    public void modifyUser(User user) {
-        // 根据 ID 查找用户并更新信息
-        User existingUser = userRepository.findById(user.getId()).orElseThrow(() -> new RuntimeException("User not found"));
-        
-        // 更新字段（可根据实际需求选择更新字段）
-        existingUser.setRealName(user.getRealName());
-        existingUser.setMajor(user.getMajor());
-        
-        userRepository.save(existingUser); // 保存更新的用户信息
+    public void modifyUser(UserInfoDTO userInfoDTO) {
+        // 先查找已有用户
+        User existingUser = userRepository.findByUsername(userInfoDTO.getName())
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // 更新基础字段（允许空字符串覆盖）
+        if (userInfoDTO.getRealName() != null) {
+            existingUser.setRealName(userInfoDTO.getRealName());
+        }
+        if (userInfoDTO.getMajor() != null) {
+            existingUser.setMajor(userInfoDTO.getMajor());
+        }
+        if (userInfoDTO.getEmail() != null) {
+            existingUser.setEmail(userInfoDTO.getEmail());
+        }
+        if (userInfoDTO.getAvatar() != null) {
+            existingUser.setAvatar(userInfoDTO.getAvatar());
+        }
+        // 不允许修改用户名
+        // existingUser.setUsername(...) 这里不操作
+
+        // 处理 OJ 账号更新
+        Map<String, String> ojAccountsMap = userInfoDTO.getOjAccounts();
+        if (ojAccountsMap != null) {
+            // 清空旧账号
+            existingUser.getOjAccounts().clear();
+
+            // 遍历 DTO 中的 Map，每个 key 是平台名，value 是用分号分隔的账号字符串
+            for (Map.Entry<String, String> entry : ojAccountsMap.entrySet()) {
+                String platformName = entry.getKey();
+                String accountsStr = entry.getValue();
+                if (accountsStr == null || accountsStr.trim().isEmpty()) continue;
+
+                // 分割账号字符串（中文分号或英文分号均可）
+                String[] accounts = accountsStr.split("[；;]");
+                for (String acctName : accounts) {
+                    if (acctName.trim().isEmpty()) continue;
+
+                    UserOJ userOJ = new UserOJ();
+                    userOJ.setPlatform(OJPlatform.valueOf(platformName)); // 枚举转换
+                    userOJ.setAccountName(acctName.trim());
+                    userOJ.setUser(existingUser);
+
+                    existingUser.getOjAccounts().add(userOJ);
+                }
+            }
+        }
+
+        // 保存更新
+        userRepository.save(existingUser);
     }
+
 
     /**
      * 修改用户密码
