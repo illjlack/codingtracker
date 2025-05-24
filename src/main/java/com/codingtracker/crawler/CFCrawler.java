@@ -6,17 +6,21 @@ import com.codingtracker.repository.ExtOjPbInfoRepository;
 import com.codingtracker.repository.TagRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.common.util.StringUtils;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.jpa.repository.support.SimpleJpaRepository;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 
 /**
  * CFCrawler 类（Codeforces API 客户端），使用 Jackson 解析 JSON，映射用户基本信息与提交记录。
@@ -107,133 +111,132 @@ public class CFCrawler {
      */
     @Transactional
     public List<UserTryProblem> userTryProblems(User user) {
-        // 获取当前 OJ 平台的链接配置
+        // 1. 获取 OJ 配置
         ExtOjLink ojLink = extOjLinkRepository.findById(getOjType())
                 .orElseThrow(() -> new RuntimeException("Missing link config for " + getOjType()));
-        String userInfoTemplate = ojLink.getUserInfoLink();    // e.g. "https://codeforces.com/api/user.status?handle=%s"
-        String problemPageTemplate = ojLink.getProblemLink();  // e.g. "https://codeforces.com/contest/%s/problem/%s"
+        String userInfoTemplate    = ojLink.getUserInfoLink();
+        String problemPageTemplate = ojLink.getProblemLink();
 
-        // 收集该用户在本平台的所有 handle，并拆分逗号
+        // 2. 收集所有 handles 并获取所有提交
         List<String> handles = user.getOjAccounts().stream()
                 .filter(uo -> uo.getPlatform() == getOjType())
                 .map(UserOJ::getAccountName)
                 .flatMap(h -> Arrays.stream(h.split("\\s*,\\s*")))
-                .filter(h -> !h.isBlank())
+                .filter(StringUtils::isNotBlank)
                 .toList();
-
         if (handles.isEmpty()) {
             logger.warn("用户 {} 未配置 {} 账号", user.getUsername(), getOjType());
             return Collections.emptyList();
         }
-
-        List<UserTryProblem> tries = new ArrayList<>();
+        List<JsonNode> submissions = new ArrayList<>();
         for (String handle : handles) {
             String url = String.format(userInfoTemplate, handle);
-            logger.info("调用 Codeforces user.status 接口，url：{}", url);
-
             try {
                 String json = httpUtil.readURL(url);
                 JsonNode root = mapper.readTree(json);
-                if (!"OK".equals(root.path("status").asText())) {
-                    logger.warn("handle={} 返回状态非 OK，跳过", handle);
-                    continue;
-                }
-
-                for (JsonNode sub : root.path("result")) {
-                    // 1. 解析提交时间
-                    long secs = sub.path("creationTimeSeconds").asLong();
-                    LocalDateTime attemptTime = LocalDateTime.ofEpochSecond(secs, 0, ZoneOffset.UTC);
-
-                    // 2. 解析 verdict
-                    String v = sub.path("verdict").asText();
-                    ProblemResult result = switch (v) {
-                        case "OK"                   -> ProblemResult.AC;
-                        case "WRONG_ANSWER"         -> ProblemResult.WA;
-                        case "TIME_LIMIT_EXCEEDED"  -> ProblemResult.TLE;
-                        case "COMPILATION_ERROR"    -> ProblemResult.CE;
-                        case "RUNTIME_ERROR"        -> ProblemResult.RE;
-                        default                     -> ProblemResult.UNKNOWN;
-                    };
-
-                    // 3. 获取或创建题目信息
-                    JsonNode p = sub.path("problem");
-                    String contestId = p.path("contestId").asText();
-                    String index     = p.path("index").asText();
-                    String pid       = contestId + index;
-
-                    // 根据模板生成题目链接
-                    String problemUrl = String.format(problemPageTemplate, contestId, index);
-
-                    ExtOjPbInfo info = extOjPbInfoRepository
-                            .findByOjNameAndPid(getOjType(), pid)
-                            .orElseGet(() -> {
-                                ExtOjPbInfo e = ExtOjPbInfo.builder()
-                                        .ojName(getOjType())
-                                        .pid(Integer.parseInt(contestId)+index)
-                                        .name(p.path("name").asText())
-                                        .type(p.path("type").asText())
-                                        .points(p.has("points") ? p.path("points").asDouble() : null)
-                                        .url(problemUrl)
-                                        .tags(new HashSet<>())
-                                        .build();
-                                return extOjPbInfoRepository.save(e);
-                            });
-
-                    // 取到 problem JSON 里的 tags 字符串列表
-                    Set<String> tagNames = new HashSet<>();
-                    JsonNode tagsNode = p.path("tags");
-                    if (tagsNode.isArray()) {
-                        for (JsonNode t : tagsNode) {
-                            tagNames.add(t.asText());
-                        }
-                    }
-
-                    // —— 1. 查出已经存在的 Tag 实体
-                    List<Tag> existingTags = tagRepository.findByNameIn(tagNames);
-                    Set<String> existingNames = existingTags.stream()
-                            .map(Tag::getName)
-                            .collect(Collectors.toSet());
-
-                    // —— 2. 新的标签名字，构造成 Tag 实体并保存
-                    List<Tag> newTags = tagNames.stream()
-                            .filter(name -> !existingNames.contains(name))
-                            .map(Tag::new)
-                            .collect(Collectors.toList());
-                    if (!newTags.isEmpty()) {
-                        newTags = tagRepository.saveAll(newTags);
-                    }
-
-                    // —— 3. 合并成真正要关联到题目的 Tag 实体集合
-                    Set<Tag> tagsForProblem = new HashSet<>();
-                    tagsForProblem.addAll(existingTags);
-                    tagsForProblem.addAll(newTags);
-
-                    // —— 4. 设置到 owning side，然后保存 ExtOjPbInfo
-                    info.setTags(tagsForProblem);
-                    info = extOjPbInfoRepository.save(info);
-
-                    // （可选）—— 如果你还想维护 inverse side 的内存状态
-                    for (Tag tag : tagsForProblem) {
-                        tag.getProblems().add(info);
-                    }
-                    tagRepository.saveAll(tagsForProblem);
-
-                    // 5. 构造尝试记录
-                    tries.add(UserTryProblem.builder()
-                            .user(user)
-                            .extOjPbInfo(info)
-                            .result(result)
-                            .attemptTime(attemptTime)
-                            .build()
-                    );
-                }
+                if (!"OK".equals(root.path("status").asText())) continue;
+                root.path("result").forEach(submissions::add);
             } catch (IOException e) {
-                logger.error("获取 CF 用户 {} 提交记录失败", handle, e);
+                logger.error("获取用户 {} 提交失败", handle, e);
             }
         }
+        if (submissions.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-        logger.info("Codeforces 用户 {} 共抓取到 {} 条尝试记录",
-                user.getUsername(), tries.size());
+        // 3. 批量收集 pid 和标签名
+        Set<String> allPids = new HashSet<>();
+        Map<String, Set<String>> pidToTags = new HashMap<>();
+        for (JsonNode sub : submissions) {
+            JsonNode p = sub.path("problem");
+            String pid = p.path("contestId").asText() + p.path("index").asText();
+            allPids.add(pid);
+            pidToTags.computeIfAbsent(pid, k -> new HashSet<>())
+                    .addAll(StreamSupport.stream(p.path("tags").spliterator(), false)
+                            .map(JsonNode::asText)
+                            .collect(Collectors.toSet()));
+        }
+        Set<String> allTagNames = pidToTags.values().stream().flatMap(Set::stream).collect(Collectors.toSet());
+
+        // 4. 批量查询已有题目和标签
+        List<ExtOjPbInfo> existInfos = extOjPbInfoRepository.findByOjNameAndPidIn(getOjType(), allPids);
+        List<Tag> existTags = tagRepository.findByNameIn(allTagNames);
+        Map<String, ExtOjPbInfo> infosMap = existInfos.stream()
+                .collect(Collectors.toMap(ExtOjPbInfo::getPid, Function.identity()));
+        Map<String, Tag> tagsMap = existTags.stream()
+                .collect(Collectors.toMap(Tag::getName, Function.identity()));
+
+        // 5. 批量插入缺失的题目
+        List<ExtOjPbInfo> newInfos = allPids.stream()
+                .filter(pid -> !infosMap.containsKey(pid))
+                .map(pid -> {
+                    // 拆 contestId 和 index
+                    String contestId = pid.replaceAll("\\D.*", "");
+                    String index     = pid.substring(contestId.length());
+                    String url       = String.format(problemPageTemplate, contestId, index);
+                    return ExtOjPbInfo.builder()
+                            .ojName(getOjType())
+                            .pid(pid)
+                            .name("") // 可选：待更新
+                            .url(url)
+                            .points(null)
+                            .tags(new HashSet<>())
+                            .build();
+                })
+                .toList();
+        extOjPbInfoRepository.saveAll(newInfos);
+        newInfos.forEach(e -> infosMap.put(e.getPid(), e));
+
+        // 6. 批量插入缺失标签
+        List<Tag> newTags = allTagNames.stream()
+                .filter(name -> !tagsMap.containsKey(name))
+                .map(Tag::new)
+                .toList();
+        tagRepository.saveAll(newTags);
+        newTags.forEach(t -> tagsMap.put(t.getName(), t));
+
+        // 7. 同步题目-标签关系：查询带 tags 实体，再差集更新
+        List<ExtOjPbInfo> allInfos = extOjPbInfoRepository.findByOjNameAndPidInWithTags(getOjType(), allPids);
+        for (ExtOjPbInfo info : allInfos) {
+            String pid = info.getPid();
+            Set<String> desired = pidToTags.getOrDefault(pid, Collections.emptySet());
+            Set<Tag> current = info.getTags();
+            Set<String> currentNames = current.stream().map(Tag::getName).collect(Collectors.toSet());
+            // 计算差集
+            Set<String> toAdd = new HashSet<>(desired);
+            toAdd.removeAll(currentNames);
+            Set<String> toRemove = new HashSet<>(currentNames);
+            toRemove.removeAll(desired);
+            // 删除多余
+            current.removeIf(t -> toRemove.contains(t.getName()));
+            // 新增缺失
+            toAdd.forEach(name -> current.add(tagsMap.get(name)));
+        }
+        extOjPbInfoRepository.saveAll(allInfos);
+
+        // 8. 构造并保存尝试记录
+        List<UserTryProblem> tries = submissions.stream().map(sub -> {
+            JsonNode p = sub.path("problem");
+            String pid = p.path("contestId").asText() + p.path("index").asText();
+            LocalDateTime time = LocalDateTime.ofEpochSecond(sub.path("creationTimeSeconds").asLong(), 0, ZoneOffset.UTC);
+            ProblemResult result = switch (sub.path("verdict").asText()) {
+                case "OK"                  -> ProblemResult.AC;
+                case "WRONG_ANSWER"        -> ProblemResult.WA;
+                case "TIME_LIMIT_EXCEEDED" -> ProblemResult.TLE;
+                case "COMPILATION_ERROR"   -> ProblemResult.CE;
+                case "RUNTIME_ERROR"       -> ProblemResult.RE;
+                default                     -> ProblemResult.UNKNOWN;
+            };
+            return UserTryProblem.builder()
+                    .user(user)
+                    .extOjPbInfo(infosMap.get(pid))
+                    .ojName(getOjType())
+                    .result(result)
+                    .attemptTime(time)
+                    .build();
+        }).toList();
+
+        logger.info("用户 {} 共抓取 {} 条尝试记录", user.getUsername(), tries.size());
         return tries;
     }
 }

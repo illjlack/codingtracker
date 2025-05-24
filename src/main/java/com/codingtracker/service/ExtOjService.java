@@ -7,8 +7,13 @@ import com.codingtracker.repository.ExtOjPbInfoRepository;
 import com.codingtracker.repository.UserRepository;
 import com.codingtracker.repository.UserTryProblemRepository;
 import com.codingtracker.service.extoj.IExtOJAdapter;
+import com.codingtracker.init.SystemStatsLoader;  // 引入加载器
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,9 +23,6 @@ import java.util.concurrent.*;
 import java.util.function.BinaryOperator;
 import java.util.stream.Collectors;
 
-/**
- * 外部 OJ 服务，负责并行抓取各平台用户尝试记录与题目信息，并同步到本地数据库。
- */
 @Service
 public class ExtOjService {
 
@@ -29,21 +31,51 @@ public class ExtOjService {
     private final UserRepository userRepository;
     private final UserTryProblemRepository tryRepo;
     private final ExtOjPbInfoRepository pbInfoRepo;
+    private final SystemStatsLoader statsLoader;  // 注入加载器
     private final List<IExtOJAdapter> adapters;
+
+    @Lazy
+    @Autowired
+    private ExtOjService selfProxy;
+    // 是否正在更新
+    @Getter
+    private volatile boolean updating = false;
 
     public ExtOjService(UserRepository userRepository,
                         UserTryProblemRepository tryRepo,
                         ExtOjPbInfoRepository pbInfoRepo,
-                        List<IExtOJAdapter> adapters) {
+                        SystemStatsLoader statsLoader,
+                        List<IExtOJAdapter> adapters) {  // 注入自己
         this.userRepository = userRepository;
         this.tryRepo = tryRepo;
         this.pbInfoRepo = pbInfoRepo;
+        this.statsLoader = statsLoader;
         this.adapters = adapters;
+        this.selfProxy = selfProxy;
     }
 
-    /**
-     * 获取所有注入的外部 OJ 适配器
-     */
+    // 触发异步刷新所有用户尝试记录
+    public synchronized boolean triggerFlushTriesDB() {
+        if (updating) {
+            return false; // 已经在更新中
+        }
+        updating = true;
+        selfProxy.asyncFlushTriesDB();
+        return true;
+    }
+
+    @Async  // 需要配置 @EnableAsync
+    @Transactional
+    void asyncFlushTriesDB() {
+        try {
+            flushTriesDB();
+        } catch (Exception e) {
+            logger.error("异步刷新尝试记录异常", e);
+        } finally {
+            updating = false;
+        }
+    }
+
     private List<IExtOJAdapter> allExtOjServices() {
         return adapters;
     }
@@ -52,10 +84,9 @@ public class ExtOjService {
         SortedSet<UserTryProblem> set = new TreeSet<>();
         logger.info("开始抓取 {} 位用户的尝试记录", users.size());
 
-        ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors()); // 限制线程池大小
+        ExecutorService pool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         List<Future<List<UserTryProblem>>> futures = new ArrayList<>();
 
-        // 提交任务
         for (IExtOJAdapter adapter : adapters) {
             for (User user : users) {
                 futures.add(pool.submit(() -> adapter.getUserTriesOnline(user)));
@@ -64,7 +95,7 @@ public class ExtOjService {
 
         try {
             pool.shutdown();
-            if (!pool.awaitTermination(10, TimeUnit.MINUTES)) {  // 等待任务完成
+            if (!pool.awaitTermination(100, TimeUnit.MINUTES)) {
                 logger.warn("所有任务未在指定时间内完成，强制关闭线程池");
             }
         } catch (InterruptedException e) {
@@ -72,11 +103,12 @@ public class ExtOjService {
             logger.error("线程池等待任务完成时发生中断", e);
         }
 
-        // 处理所有结果
         for (Future<List<UserTryProblem>> f : futures) {
             try {
-                List<UserTryProblem> problems = f.get(30, TimeUnit.SECONDS);  // 限制超时时间
-                set.addAll(problems);
+                List<UserTryProblem> problems = f.get(30, TimeUnit.SECONDS);
+                if (problems != null) {
+                    set.addAll(problems);
+                }
             } catch (TimeoutException | InterruptedException e) {
                 logger.error("任务超时", e);
             } catch (ExecutionException e) {
@@ -88,9 +120,6 @@ public class ExtOjService {
         return set;
     }
 
-    /**
-     * 并行抓取所有题目信息
-     */
     private SortedSet<ExtOjPbInfo> fetchAllProblemInfo() {
         SortedSet<ExtOjPbInfo> set = new TreeSet<>();
         for (IExtOJAdapter adapter : adapters) {
@@ -100,9 +129,6 @@ public class ExtOjService {
         return set;
     }
 
-    /**
-     * 更新用户最后一次尝试时间（取最新 attemptTime）
-     */
     @Transactional
     public void flushUserLastTryDate(Set<UserTryProblem> tries) {
         Map<User, LocalDateTime> lastTimes = tries.stream()
@@ -116,9 +142,6 @@ public class ExtOjService {
         logger.info("已更新 {} 位用户的最后尝试时间", lastTimes.size());
     }
 
-    /**
-     * 刷新单个用户的尝试数据
-     */
     @Transactional
     public void flushTriesByUser(User user) {
         logger.info("刷新用户 {} 的尝试记录", user.getUsername());
@@ -131,9 +154,6 @@ public class ExtOjService {
         logger.info("用户 {} 新增 {} 条尝试记录", user.getUsername(), added.size());
     }
 
-    /**
-     * 刷新所有用户的尝试数据
-     */
     @Transactional
     public void flushTriesDB() {
         logger.info("刷新所有用户的尝试记录");
@@ -141,15 +161,19 @@ public class ExtOjService {
         SortedSet<UserTryProblem> current = fetchAllUserTries(users);
         List<UserTryProblem> existing = tryRepo.findAll();
         Set<UserTryProblem> added = new HashSet<>(current);
-        added.removeAll(existing);
+        existing.forEach(added::remove);
         tryRepo.saveAll(added);
         flushUserLastTryDate(added);
-        logger.info("刷新完成，新增 {} 条尝试记录", added.size());
+
+        statsLoader.updateStats(
+                statsLoader.getUserCount(),
+                statsLoader.getSumProblemCount(),
+                statsLoader.getSumTryCount()
+        );
+
+        logger.info("刷新完成，新增 {} 条尝试记录，更新时间 {}", added.size(), statsLoader.getLastUpdateTime());
     }
 
-    /**
-     * 刷新题目信息库
-     */
     @Transactional
     public void flushPbInfoDB() {
         logger.info("刷新题目信息库");
@@ -162,10 +186,11 @@ public class ExtOjService {
         logger.info("题目信息刷新完成，共 {} 条记录", merged.size());
     }
 
-    /**
-     * 获取指定用户的尝试记录
-     */
     public List<UserTryProblem> getUserTries(User user) {
         return tryRepo.findByUser(user);
+    }
+
+    public LocalDateTime getLastUpdateTime() {
+        return statsLoader.getLastUpdateTime();
     }
 }

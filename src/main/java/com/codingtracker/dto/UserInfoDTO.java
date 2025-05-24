@@ -1,4 +1,4 @@
-package com.codingtracker.DTO;
+package com.codingtracker.dto;
 
 import com.codingtracker.model.User;
 import lombok.Getter;

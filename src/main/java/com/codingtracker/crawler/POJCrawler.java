@@ -123,6 +123,7 @@ public class POJCrawler {
                         tries.add(UserTryProblem.builder()
                                 .user(user)
                                 .extOjPbInfo(info)
+                                .ojName(getOjType())
                                 .result(ProblemResult.AC)
                                 .attemptTime(now)
                                 .build());

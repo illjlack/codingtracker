@@ -1,6 +1,6 @@
 package com.codingtracker.controller.api.auth;
 
-import com.codingtracker.DTO.ApiResponse;
+import com.codingtracker.dto.ApiResponse;
 import com.codingtracker.model.User;
 import com.codingtracker.service.UserService;
 import jakarta.annotation.security.RolesAllowed;

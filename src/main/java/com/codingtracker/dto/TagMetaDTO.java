@@ -1,4 +1,4 @@
-package com.codingtracker.DTO;
+package com.codingtracker.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

@@ -122,6 +122,7 @@ public class HDUCrawler {
                     UserTryProblem utp = UserTryProblem.builder()
                             .user(user)
                             .extOjPbInfo(info)
+                            .ojName(getOjType())
                             .result(ProblemResult.AC)
                             .attemptTime(now)
                             .build();

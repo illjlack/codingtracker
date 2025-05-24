@@ -1,8 +1,8 @@
 // src/main/java/com/codingtracker/controller/api/auth/AuthController.java
 package com.codingtracker.controller.api.auth;
 
-import com.codingtracker.DTO.ApiResponse;
-import com.codingtracker.DTO.UserInfoDTO;
+import com.codingtracker.dto.ApiResponse;
+import com.codingtracker.dto.UserInfoDTO;
 import com.codingtracker.model.User;
 import com.codingtracker.repository.UserRepository;
 import com.codingtracker.service.UserService;

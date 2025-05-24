@@ -1,6 +1,5 @@
-package com.codingtracker.DTO;
+package com.codingtracker.dto;
 
-import com.codingtracker.model.ProblemResult;
 import com.codingtracker.model.UserTryProblem;
 import lombok.Getter;
 import lombok.Setter;

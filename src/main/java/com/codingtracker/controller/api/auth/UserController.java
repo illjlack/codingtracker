@@ -1,7 +1,7 @@
 package com.codingtracker.controller.api.auth;
 
-import com.codingtracker.DTO.ApiResponse;
-import com.codingtracker.DTO.UserOJDTO;
+import com.codingtracker.dto.ApiResponse;
+import com.codingtracker.dto.UserOJDTO;
 import com.codingtracker.model.UserOJ;
 import com.codingtracker.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;

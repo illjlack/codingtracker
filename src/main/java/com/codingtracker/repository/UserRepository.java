@@ -24,4 +24,6 @@ public interface UserRepository extends JpaRepository<User, Integer> {
 
     // 判断真实姓名是否已存在
     boolean existsByRealName(String realName);
+
+    List<User> findAllById(Iterable<Integer> ids);
 }
