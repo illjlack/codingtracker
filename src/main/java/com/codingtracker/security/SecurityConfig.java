@@ -64,6 +64,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         // 登录 & 注册 不需要认证
                         .requestMatchers(HttpMethod.POST, "/api/auth/login", "/api/auth/register").permitAll()
+                        // 允许访问头像资源
+                        .requestMatchers("/avatars/**").permitAll()
                         // 其它接口都需要走 JWT 认证
                         .anyRequest().authenticated()
                 )

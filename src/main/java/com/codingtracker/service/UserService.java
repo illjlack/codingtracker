@@ -11,30 +11,27 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.codingtracker.model.User;
 import com.codingtracker.repository.UserRepository;
+import org.springframework.web.multipart.MultipartFile;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
 public class UserService {
-
-    private final UserRepository userRepository; // 用于与数据库交互的 Repository
-
+    private final UserRepository userRepository;
     private final UserOJRepository userOJRepository;
+    private final BCryptPasswordEncoder passwordEncoder;
+    private final AvatarStorageService avatarStorageService;
 
-    private final BCryptPasswordEncoder passwordEncoder; // bean注入
-
-
-    // 构造函数注入方式
     @Autowired
     public UserService(UserRepository userRepository,
                        UserOJRepository userOJRepository,
-                       BCryptPasswordEncoder passwordEncoder) {
+                       BCryptPasswordEncoder passwordEncoder,
+                       AvatarStorageService avatarStorageService) {  // 构造函数注入
         this.userRepository = userRepository;
         this.userOJRepository = userOJRepository;
         this.passwordEncoder = passwordEncoder;
+        this.avatarStorageService = avatarStorageService;
     }
 
     /**
@@ -109,29 +106,60 @@ public class UserService {
         // 不允许修改用户名
         // existingUser.setUsername(...) 这里不操作
 
-        // 处理 OJ 账号更新
         Map<String, String> ojAccountsMap = userInfoDTO.getOjAccounts();
         if (ojAccountsMap != null) {
-            // 清空旧账号
-            existingUser.getOjAccounts().clear();
+            List<UserOJ> existingOJList = existingUser.getOjAccounts();
 
-            // 遍历 DTO 中的 Map，每个 key 是平台名，value 是用分号分隔的账号字符串
+            // 构建数据库中已有账号的 Map: 平台名 -> Set(账号名)
+            Map<String, Set<String>> existingMap = new HashMap<>();
+            for (UserOJ oj : existingOJList) {
+                existingMap.computeIfAbsent(oj.getPlatform().name(), k -> new HashSet<>())
+                        .add(oj.getAccountName());
+            }
+
+            // 构建 DTO 传入账号的 Map: 平台名 -> Set(账号名)
+            Map<String, Set<String>> incomingMap = new HashMap<>();
             for (Map.Entry<String, String> entry : ojAccountsMap.entrySet()) {
                 String platformName = entry.getKey();
                 String accountsStr = entry.getValue();
                 if (accountsStr == null || accountsStr.trim().isEmpty()) continue;
 
-                // 分割账号字符串（中文分号或英文分号均可）
-                String[] accounts = accountsStr.split("[；;]");
+                Set<String> acctSet = Arrays.stream(accountsStr.split("[；;]"))
+                        .map(String::trim)
+                        .filter(s -> !s.isEmpty())
+                        .collect(Collectors.toSet());
+                incomingMap.put(platformName, acctSet);
+            }
+
+            // 处理删除：数据库中有但 DTO 没有的账号需要删除
+            Iterator<UserOJ> it = existingOJList.iterator();
+            while (it.hasNext()) {
+                UserOJ oj = it.next();
+                String platform = oj.getPlatform().name();
+                String acct = oj.getAccountName();
+                Set<String> incomingAccts = incomingMap.get(platform);
+                if (incomingAccts == null || !incomingAccts.contains(acct)) {
+                    // 该账号在DTO里不存在，删除
+                    it.remove(); // 从集合移除
+                    userOJRepository.delete(oj); // 从数据库删除
+                }
+            }
+
+            // 处理新增：DTO 有但数据库没有的账号需要新增
+            for (Map.Entry<String, Set<String>> entry : incomingMap.entrySet()) {
+                String platformName = entry.getKey();
+                Set<String> accounts = entry.getValue();
+
+                Set<String> existAccts = existingMap.getOrDefault(platformName, Collections.emptySet());
                 for (String acctName : accounts) {
-                    if (acctName.trim().isEmpty()) continue;
-
-                    UserOJ userOJ = new UserOJ();
-                    userOJ.setPlatform(OJPlatform.valueOf(platformName)); // 枚举转换
-                    userOJ.setAccountName(acctName.trim());
-                    userOJ.setUser(existingUser);
-
-                    existingUser.getOjAccounts().add(userOJ);
+                    if (!existAccts.contains(acctName)) {
+                        // 新账号，创建实体加入
+                        UserOJ userOJ = new UserOJ();
+                        userOJ.setPlatform(OJPlatform.valueOf(platformName));
+                        userOJ.setAccountName(acctName);
+                        userOJ.setUser(existingUser);
+                        existingOJList.add(userOJ);
+                    }
                 }
             }
         }
@@ -140,6 +168,24 @@ public class UserService {
         userRepository.save(existingUser);
     }
 
+    /**
+     * 保存用户头像文件
+     * @param username 用户名
+     * @param file 上传的头像文件
+     * @return 是否保存成功
+     */
+    public boolean storeAvatar(String username, MultipartFile file) {
+        try {
+            String avatarUrl = avatarStorageService.store(file);
+            User user = userRepository.findByUsername(username)
+                    .orElseThrow(() -> new RuntimeException("用户不存在"));
+            user.setAvatar(avatarUrl);
+            userRepository.save(user);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
 
     /**
      * 修改用户密码

@@ -4,6 +4,7 @@ package com.codingtracker.controller.api.auth;
 import com.codingtracker.DTO.ApiResponse;
 import com.codingtracker.DTO.UserInfoDTO;
 import com.codingtracker.model.User;
+import com.codingtracker.repository.UserRepository;
 import com.codingtracker.service.UserService;
 import com.codingtracker.util.JwtUtils;
 import lombok.Getter;
@@ -12,6 +13,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PostMapping;
 
 import java.util.Map;
 import java.util.Optional;
@@ -22,9 +26,11 @@ public class AuthController {
 
     private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
     private final UserService userService;
+    private final UserRepository userRepository;
 
-    public AuthController(UserService userService) {
+    public AuthController(UserService userService, UserRepository userRepository) {
         this.userService = userService;
+        this.userRepository = userRepository;
     }
 
     // 用户登录并返回 token
@@ -126,6 +132,46 @@ public class AuthController {
         // 此处可执行其它登出清理操作
 
         return ApiResponse.ok("登出成功", null);
+    }
+
+    @PostMapping("/upload-avatar")
+    public ApiResponse<Map<String, String>> uploadAvatar(@RequestParam("avatar") MultipartFile file) {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        logger.info("用户上传头像: 用户名={}", username);
+
+        if (file.isEmpty()) {
+            return ApiResponse.error("上传文件为空");
+        }
+
+        try {
+            // 调用业务层保存头像，返回是否成功
+            boolean success = userService.storeAvatar(username, file);
+
+
+            if (success) {
+                Optional<User> userOpt = userRepository.findByUsername(username);
+                if (userOpt.isPresent()) {
+                    String avatarUrl = userOpt.get().getAvatar();
+                    if (avatarUrl == null || avatarUrl.isEmpty()) {
+                        logger.warn("头像URL为空: 用户名={}", username);
+                        return ApiResponse.ok("上传成功，但头像URL为空", Map.of("url", ""));
+                    } else {
+                        logger.info("头像上传成功: 用户名={}, 头像URL={}", username, avatarUrl);
+                        return ApiResponse.ok("上传成功", Map.of("url", avatarUrl));
+                    }
+                } else {
+                    logger.warn("上传成功但未找到用户信息: 用户名={}", username);
+                    return ApiResponse.error("上传成功但未找到用户信息");
+                }
+            } else {
+                logger.error("头像上传失败: 用户名={}", username);
+                return ApiResponse.error("上传失败");
+            }
+
+        } catch (Exception e) {
+            logger.error("头像上传异常: 用户名={}, 异常={}", username, e.getMessage());
+            return ApiResponse.error("上传异常");
+        }
     }
 
     /** 请求体和内部 DTO **/
